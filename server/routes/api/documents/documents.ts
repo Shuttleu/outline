@@ -5,6 +5,7 @@ import invariant from "invariant";
 import JSZip from "jszip";
 import Router from "koa-router";
 import escapeRegExp from "lodash/escapeRegExp";
+import uniq from "lodash/uniq";
 import mime from "mime-types";
 import { Op, ScopeOptions, Sequelize, WhereOptions } from "sequelize";
 import { v4 as uuidv4 } from "uuid";
@@ -44,7 +45,8 @@ import {
   UserMembership,
 } from "@server/models";
 import AttachmentHelper from "@server/models/helpers/AttachmentHelper";
-import DocumentHelper from "@server/models/helpers/DocumentHelper";
+import { DocumentHelper } from "@server/models/helpers/DocumentHelper";
+import { ProsemirrorHelper } from "@server/models/helpers/ProsemirrorHelper";
 import SearchHelper from "@server/models/helpers/SearchHelper";
 import { authorize, cannot } from "@server/policies";
 import {
@@ -62,7 +64,6 @@ import FileStorage from "@server/storage/files";
 import { APIContext } from "@server/types";
 import { RateLimiterStrategy } from "@server/utils/RateLimiter";
 import ZipHelper from "@server/utils/ZipHelper";
-import parseAttachmentIds from "@server/utils/parseAttachmentIds";
 import { getTeamFromContext } from "@server/utils/passport";
 import { assertPresent } from "@server/validation";
 import pagination from "../middlewares/pagination";
@@ -190,7 +191,7 @@ router.post(
     }
 
     const data = await Promise.all(
-      documents.map((document) => presentDocument(document))
+      documents.map((document) => presentDocument(ctx, document))
     );
     const policies = presentPolicies(user, documents);
     ctx.body = {
@@ -223,7 +224,7 @@ router.post(
       limit: ctx.state.pagination.limit,
     });
     const data = await Promise.all(
-      documents.map((document) => presentDocument(document))
+      documents.map((document) => presentDocument(ctx, document))
     );
     const policies = presentPolicies(user, documents);
 
@@ -286,7 +287,7 @@ router.post(
       limit: ctx.state.pagination.limit,
     });
     const data = await Promise.all(
-      documents.map((document) => presentDocument(document))
+      documents.map((document) => presentDocument(ctx, document))
     );
     const policies = presentPolicies(user, documents);
 
@@ -342,7 +343,7 @@ router.post(
       return document;
     });
     const data = await Promise.all(
-      documents.map((document) => presentDocument(document))
+      documents.map((document) => presentDocument(ctx, document))
     );
     const policies = presentPolicies(user, documents);
 
@@ -398,7 +399,7 @@ router.post(
       limit: ctx.state.pagination.limit,
     });
     const data = await Promise.all(
-      documents.map((document) => presentDocument(document))
+      documents.map((document) => presentDocument(ctx, document))
     );
     const policies = presentPolicies(user, documents);
 
@@ -415,8 +416,9 @@ router.post(
   auth({ optional: true }),
   validate(T.DocumentsInfoSchema),
   async (ctx: APIContext<T.DocumentsInfoReq>) => {
-    const { id, shareId, apiVersion } = ctx.input.body;
+    const { id, shareId } = ctx.input.body;
     const { user } = ctx.state.auth;
+    const apiVersion = getAPIVersion(ctx);
     const teamFromCtx = await getTeamFromContext(ctx);
     const { document, share, collection } = await documentLoader({
       id,
@@ -425,7 +427,7 @@ router.post(
       teamId: teamFromCtx?.id,
     });
     const isPublic = cannot(user, "read", document);
-    const serializedDocument = await presentDocument(document, {
+    const serializedDocument = await presentDocument(ctx, document, {
       isPublic,
     });
 
@@ -434,7 +436,7 @@ router.post(
     // Passing apiVersion=2 has a single effect, to change the response payload to
     // include top level keys for document, sharedTree, and team.
     const data =
-      apiVersion === 2
+      apiVersion >= 2
         ? {
             document: serializedDocument,
             team: team?.getPreference(TeamPreference.PublicBranding)
@@ -476,35 +478,45 @@ router.post(
       },
     };
 
-    if (document.collectionId) {
-      const collection = await document.$get("collection");
+    const [collection, memberIds, collectionMemberIds] = await Promise.all([
+      document.$get("collection"),
+      Document.membershipUserIds(document.id),
+      document.collectionId
+        ? Collection.membershipUserIds(document.collectionId)
+        : [],
+    ]);
 
-      if (!collection?.permission) {
-        const memberIds = await Collection.membershipUserIds(
-          document.collectionId
-        );
-        where = {
-          ...where,
+    where = {
+      ...where,
+      [Op.or]: [
+        {
           id: {
-            [Op.in]: memberIds,
+            [Op.in]: uniq([...memberIds, ...collectionMemberIds]),
           },
-        };
-      }
+        },
+        collection?.permission
+          ? {
+              role: {
+                [Op.ne]: UserRole.Guest,
+              },
+            }
+          : {},
+      ],
+    };
 
-      if (query) {
-        where = {
-          ...where,
-          name: {
-            [Op.iLike]: `%${query}%`,
-          },
-        };
-      }
-
-      [users, total] = await Promise.all([
-        User.findAll({ where, offset, limit }),
-        User.count({ where }),
-      ]);
+    if (query) {
+      where = {
+        ...where,
+        name: {
+          [Op.iLike]: `%${query}%`,
+        },
+      };
     }
+
+    [users, total] = await Promise.all([
+      User.findAll({ where, offset, limit }),
+      User.count({ where }),
+    ]);
 
     ctx.body = {
       pagination: { ...ctx.state.pagination, total },
@@ -561,7 +573,9 @@ router.post(
       contentType === "text/markdown" ? "md" : mime.extension(contentType);
 
     const fileName = slugify(document.titleWithDefault);
-    const attachmentIds = parseAttachmentIds(document.text);
+    const attachmentIds = ProsemirrorHelper.parseAttachmentIds(
+      DocumentHelper.toProsemirror(document)
+    );
     const attachments = attachmentIds.length
       ? await Attachment.findAll({
           where: {
@@ -667,31 +681,25 @@ router.post(
       authorize(user, "restore", document);
       // restore a previously deleted document
       await document.unarchive(user.id);
-      await Event.create({
+      await Event.createFromContext(ctx, {
         name: "documents.restore",
         documentId: document.id,
         collectionId: document.collectionId,
-        teamId: document.teamId,
-        actorId: user.id,
         data: {
           title: document.title,
         },
-        ip: ctx.request.ip,
       });
     } else if (document.archivedAt) {
       authorize(user, "unarchive", document);
       // restore a previously archived document
       await document.unarchive(user.id);
-      await Event.create({
+      await Event.createFromContext(ctx, {
         name: "documents.unarchive",
         documentId: document.id,
         collectionId: document.collectionId,
-        teamId: document.teamId,
-        actorId: user.id,
         data: {
           title: document.title,
         },
-        ip: ctx.request.ip,
       });
     } else if (revisionId) {
       // restore a document to a specific revision
@@ -702,23 +710,20 @@ router.post(
       document.restoreFromRevision(revision);
       await document.save();
 
-      await Event.create({
+      await Event.createFromContext(ctx, {
         name: "documents.restore",
         documentId: document.id,
         collectionId: document.collectionId,
-        teamId: document.teamId,
-        actorId: user.id,
         data: {
           title: document.title,
         },
-        ip: ctx.request.ip,
       });
     } else {
       assertPresent(revisionId, "revisionId is required");
     }
 
     ctx.body = {
-      data: await presentDocument(document),
+      data: await presentDocument(ctx, document),
       policies: presentPolicies(user, [document]),
     };
   }
@@ -758,7 +763,7 @@ router.post(
     });
     const policies = presentPolicies(user, documents);
     const data = await Promise.all(
-      documents.map((document) => presentDocument(document))
+      documents.map((document) => presentDocument(ctx, document))
     );
 
     ctx.body = {
@@ -884,7 +889,7 @@ router.post(
 
     const data = await Promise.all(
       results.map(async (result) => {
-        const document = await presentDocument(result.document);
+        const document = await presentDocument(ctx, result.document);
         return { ...result, document };
       })
     );
@@ -940,23 +945,22 @@ router.post(
         emoji: original.emoji,
         title: original.title,
         text: original.text,
+        content: original.content,
       },
       {
         transaction,
       }
     );
-    await Event.create(
+    await Event.createFromContext(
+      ctx,
       {
         name: "documents.create",
         documentId: document.id,
         collectionId: document.collectionId,
-        teamId: document.teamId,
-        actorId: user.id,
         data: {
           title: document.title,
           template: true,
         },
-        ip: ctx.request.ip,
       },
       {
         transaction,
@@ -971,7 +975,7 @@ router.post(
     invariant(reloaded, "document not found");
 
     ctx.body = {
-      data: await presentDocument(reloaded),
+      data: await presentDocument(ctx, reloaded),
       policies: presentPolicies(user, [reloaded]),
     };
   }
@@ -984,9 +988,10 @@ router.post(
   transaction(),
   async (ctx: APIContext<T.DocumentsUpdateReq>) => {
     const { transaction } = ctx.state;
-    const { id, apiVersion, insightsEnabled, publish, collectionId, ...input } =
+    const { id, insightsEnabled, publish, collectionId, ...input } =
       ctx.input.body;
     const editorVersion = ctx.headers["x-editor-version"] as string | undefined;
+
     const { user } = ctx.state.auth;
     let collection: Collection | null | undefined;
 
@@ -1041,15 +1046,7 @@ router.post(
     document.collection = collection;
 
     ctx.body = {
-      data:
-        apiVersion === 2
-          ? {
-              document: await presentDocument(document),
-              collection: collection
-                ? presentCollection(collection)
-                : undefined,
-            }
-          : await presentDocument(document),
+      data: await presentDocument(ctx, document),
       policies: presentPolicies(user, [document, collection]),
     };
   }
@@ -1109,7 +1106,7 @@ router.post(
     ctx.body = {
       data: {
         documents: await Promise.all(
-          response.map((document) => presentDocument(document))
+          response.map((document) => presentDocument(ctx, document))
         ),
       },
       policies: presentPolicies(user, response),
@@ -1162,10 +1159,10 @@ router.post(
     ctx.body = {
       data: {
         documents: await Promise.all(
-          documents.map((document) => presentDocument(document))
+          documents.map((document) => presentDocument(ctx, document))
         ),
         collections: await Promise.all(
-          collections.map((collection) => presentCollection(collection))
+          collections.map((collection) => presentCollection(ctx, collection))
         ),
       },
       policies: collectionChanged ? presentPolicies(user, documents) : [],
@@ -1187,20 +1184,17 @@ router.post(
     authorize(user, "archive", document);
 
     await document.archive(user.id);
-    await Event.create({
+    await Event.createFromContext(ctx, {
       name: "documents.archive",
       documentId: document.id,
       collectionId: document.collectionId,
-      teamId: document.teamId,
-      actorId: user.id,
       data: {
         title: document.title,
       },
-      ip: ctx.request.ip,
     });
 
     ctx.body = {
-      data: await presentDocument(document),
+      data: await presentDocument(ctx, document),
       policies: presentPolicies(user, [document]),
     };
   }
@@ -1222,16 +1216,13 @@ router.post(
       authorize(user, "permanentDelete", document);
 
       await documentPermanentDeleter([document]);
-      await Event.create({
+      await Event.createFromContext(ctx, {
         name: "documents.permanent_delete",
         documentId: document.id,
         collectionId: document.collectionId,
-        teamId: document.teamId,
-        actorId: user.id,
         data: {
           title: document.title,
         },
-        ip: ctx.request.ip,
       });
     } else {
       const document = await Document.findByPk(id, {
@@ -1241,16 +1232,13 @@ router.post(
       authorize(user, "delete", document);
 
       await document.delete(user.id);
-      await Event.create({
+      await Event.createFromContext(ctx, {
         name: "documents.delete",
         documentId: document.id,
         collectionId: document.collectionId,
-        teamId: document.teamId,
-        actorId: user.id,
         data: {
           title: document.title,
         },
-        ip: ctx.request.ip,
       });
     }
 
@@ -1265,7 +1253,7 @@ router.post(
   auth(),
   validate(T.DocumentsUnpublishSchema),
   async (ctx: APIContext<T.DocumentsUnpublishReq>) => {
-    const { id, apiVersion } = ctx.input.body;
+    const { id } = ctx.input.body;
     const { user } = ctx.state.auth;
 
     const document = await Document.findByPk(id, {
@@ -1285,28 +1273,17 @@ router.post(
     }
 
     await document.unpublish(user.id);
-    await Event.create({
+    await Event.createFromContext(ctx, {
       name: "documents.unpublish",
       documentId: document.id,
       collectionId: document.collectionId,
-      teamId: document.teamId,
-      actorId: user.id,
       data: {
         title: document.title,
       },
-      ip: ctx.request.ip,
     });
 
     ctx.body = {
-      data:
-        apiVersion === 2
-          ? {
-              document: await presentDocument(document),
-              collection: document.collection
-                ? presentCollection(document.collection)
-                : undefined,
-            }
-          : await presentDocument(document),
+      data: await presentDocument(ctx, document),
       policies: presentPolicies(user, [document]),
     };
   }
@@ -1384,7 +1361,7 @@ router.post(
     });
 
     ctx.body = {
-      data: await presentDocument(document),
+      data: await presentDocument(ctx, document),
       policies: presentPolicies(user, [document]),
     };
   }
@@ -1470,7 +1447,7 @@ router.post(
     document.collection = collection;
 
     ctx.body = {
-      data: await presentDocument(document),
+      data: await presentDocument(ctx, document),
       policies: presentPolicies(user, [document]),
     };
   }
@@ -1550,15 +1527,13 @@ router.post(
       await membership.save({ transaction });
     }
 
-    await Event.create(
+    await Event.createFromContext(
+      ctx,
       {
         name: "documents.add_user",
         userId,
         modelId: membership.id,
         documentId: document.id,
-        teamId: document.teamId,
-        actorId: actor.id,
-        ip: ctx.request.ip,
         data: {
           title: document.title,
           isNew,
@@ -1618,15 +1593,13 @@ router.post(
 
     await membership.destroy({ transaction });
 
-    await Event.create(
+    await Event.createFromContext(
+      ctx,
       {
         name: "documents.remove_user",
         userId,
         modelId: membership.id,
         documentId: document.id,
-        teamId: document.teamId,
-        actorId: actor.id,
-        ip: ctx.request.ip,
       },
       { transaction }
     );
@@ -1736,11 +1709,8 @@ router.post(
     });
 
     await documentPermanentDeleter(documents);
-    await Event.create({
+    await Event.createFromContext(ctx, {
       name: "documents.empty_trash",
-      teamId: user.teamId,
-      actorId: user.id,
-      ip: ctx.request.ip,
     });
 
     ctx.body = {
@@ -1748,5 +1718,17 @@ router.post(
     };
   }
 );
+
+// Remove this helper once apiVersion is removed (#6175)
+function getAPIVersion(ctx: APIContext) {
+  return Number(
+    ctx.headers["x-api-version"] ??
+      (typeof ctx.input.body === "object" &&
+        ctx.input.body &&
+        "apiVersion" in ctx.input.body &&
+        ctx.input.body.apiVersion) ??
+      0
+  );
+}
 
 export default router;

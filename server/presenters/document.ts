@@ -1,13 +1,21 @@
 import { traceFunction } from "@server/logging/tracing";
 import { Document } from "@server/models";
-import TextHelper from "@server/models/helpers/TextHelper";
+import { DocumentHelper } from "@server/models/helpers/DocumentHelper";
+import { TextHelper } from "@server/models/helpers/TextHelper";
+import { APIContext } from "@server/types";
 import presentUser from "./user";
 
 type Options = {
+  /** Whether to render the document's public fields. */
   isPublic?: boolean;
+  /** Always include the text of the document in the payload. */
+  includeText?: boolean;
+  /** Always include the data of the document in the payload. */
+  includeData?: boolean;
 };
 
 async function presentDocument(
+  ctx: APIContext | undefined,
   document: Document,
   options: Options | null | undefined = {}
 ) {
@@ -15,6 +23,8 @@ async function presentDocument(
     isPublic: false,
     ...options,
   };
+
+  const asData = !ctx || Number(ctx?.headers["x-api-version"] ?? 0) >= 3;
   const text = options.isPublic
     ? await TextHelper.attachmentsToSignedUrls(document.text, document.teamId)
     : document.text;
@@ -24,8 +34,21 @@ async function presentDocument(
     url: document.url,
     urlId: document.urlId,
     title: document.title,
+    data:
+      asData || options.includeData
+        ? await DocumentHelper.toJSON(
+            document,
+            options.isPublic
+              ? {
+                  signedUrls: 60,
+                  teamId: document.teamId,
+                  removeMarks: ["comment"],
+                }
+              : undefined
+          )
+        : undefined,
+    text: !asData || options?.includeText ? text : undefined,
     emoji: document.emoji,
-    text,
     tasks: document.tasks,
     createdAt: document.createdAt,
     createdBy: undefined,
@@ -41,7 +64,7 @@ async function presentDocument(
     collectionId: undefined,
     parentDocumentId: undefined,
     lastViewedAt: undefined,
-    isCollectionDeleted: await document.isCollectionDeleted(),
+    isCollectionDeleted: undefined,
   };
 
   if (!!document.views && document.views.length > 0) {
@@ -51,6 +74,7 @@ async function presentDocument(
   if (!options.isPublic) {
     const source = await document.$get("import");
 
+    data.isCollectionDeleted = await document.isCollectionDeleted();
     data.collectionId = document.collectionId;
     data.parentDocumentId = document.parentDocumentId;
     data.createdBy = presentUser(document.createdBy);

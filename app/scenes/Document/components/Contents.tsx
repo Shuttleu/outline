@@ -107,7 +107,7 @@ const Sticky = styled.div`
   background: ${s("background")};
   transition: ${s("backgroundTransition")};
 
-  margin-top: 80px;
+  margin-top: calc(50px + 6vh);
   margin-right: 52px;
   min-width: 204px;
   width: 228px;
@@ -141,6 +141,7 @@ const ListItem = styled.li<{ level: number; active?: boolean }>`
   margin-bottom: 8px;
   padding-right: 2em;
   line-height: 1.3;
+  word-break: break-word;
 
   a {
     font-weight: ${(props) => (props.active ? "600" : "inherit")};

@@ -16,7 +16,7 @@ import parseAttachmentIds from "@server/utils/parseAttachmentIds";
 import parseImages from "@server/utils/parseImages";
 
 @trace()
-export default class TextHelper {
+export class TextHelper {
   /**
    * Replaces template variables in the given text with the current date and time.
    *
@@ -32,7 +32,8 @@ export default class TextHelper {
     return text
       .replace(/{date}/g, startCase(getCurrentDateAsString(locales)))
       .replace(/{time}/g, startCase(getCurrentTimeAsString(locales)))
-      .replace(/{datetime}/g, startCase(getCurrentDateTimeAsString(locales)));
+      .replace(/{datetime}/g, startCase(getCurrentDateTimeAsString(locales)))
+      .replace(/{author}/g, user.name);
   }
 
   /**

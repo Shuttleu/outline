@@ -19,6 +19,7 @@ import {
 import { DocumentHelper } from "@server/models/helpers/DocumentHelper";
 import { sequelize } from "@server/storage/database";
 import teamProvisioner from "./teamProvisioner";
+import userGroupsUpdater from "./userGroupsUpdater";
 import userProvisioner from "./userProvisioner";
 
 type Props = {
@@ -51,6 +52,8 @@ type Props = {
     /** The public url of an image representing the team */
     avatarUrl?: string | null;
   };
+  /** Groups the user belongs to */
+  groups?: string[];
   /** Details of the authentication provider being used */
   authenticationProvider: {
     /** The name of the authentication provider, eg "google" */
@@ -84,6 +87,7 @@ async function accountProvisioner({
   ip,
   user: userParams,
   team: teamParams,
+  groups: groupsParam,
   authenticationProvider: authenticationProviderParams,
   authentication: authenticationParams,
 }: Props): Promise<AccountProvisionerResult> {
@@ -151,12 +155,12 @@ async function accountProvisioner({
     authentication: emailMatchOnly
       ? undefined
       : {
-          authenticationProviderId: authenticationProvider.id,
-          ...authenticationParams,
-          expiresAt: authenticationParams.expiresIn
-            ? new Date(Date.now() + authenticationParams.expiresIn * 1000)
-            : undefined,
-        },
+        authenticationProviderId: authenticationProvider.id,
+        ...authenticationParams,
+        expiresAt: authenticationParams.expiresIn
+          ? new Date(Date.now() + authenticationParams.expiresIn * 1000)
+          : undefined,
+      },
   });
   const { isNewUser, user } = result;
 
@@ -187,6 +191,10 @@ async function accountProvisioner({
     if (provision) {
       await provisionFirstCollection(team, user);
     }
+  }
+
+  if (groupsParam) {
+    await userGroupsUpdater(user, groupsParam);
   }
 
   return {

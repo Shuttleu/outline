@@ -21,6 +21,11 @@ COPY --from=deps $APP_PATH/.sequelizerc ./.sequelizerc
 COPY --from=deps $APP_PATH/node_modules ./node_modules
 COPY --from=deps $APP_PATH/package.json ./package.json
 
+# Install wget to healthcheck the server
+RUN  apt-get update \
+  && apt-get install -y wget \
+  && rm -rf /var/lib/apt/lists/*
+
 # Create a non-root user compatible with Debian and BusyBox based images
 RUN addgroup --gid 1001 nodejs && \
   adduser --uid 1001 --ingroup nodejs nodejs && \
@@ -36,6 +41,8 @@ RUN mkdir -p "$FILE_STORAGE_LOCAL_ROOT_DIR" && \
 VOLUME /var/lib/outline/data
 
 USER nodejs
+
+HEALTHCHECK --interval=1m CMD wget -qO- "http://localhost:${PORT:-3000}/_health" | grep -q "OK" || exit 1
 
 EXPOSE 3000
 CMD ["yarn", "start"]

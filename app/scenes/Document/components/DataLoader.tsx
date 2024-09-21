@@ -53,8 +53,7 @@ type Props = RouteComponentProps<Params, StaticContext, LocationState> & {
 };
 
 function DataLoader({ match, children }: Props) {
-  const { ui, views, shares, comments, documents, revisions, subscriptions } =
-    useStores();
+  const { ui, views, shares, comments, documents, revisions } = useStores();
   const team = useCurrentTeam();
   const user = useCurrentUser();
   const [error, setError] = React.useState<Error | null>(null);
@@ -122,22 +121,6 @@ function DataLoader({ match, children }: Props) {
   }, [document, revisionId, revisions]);
 
   React.useEffect(() => {
-    async function fetchSubscription() {
-      if (document?.id && !document?.isDeleted && !revisionId) {
-        try {
-          await subscriptions.fetchPage({
-            documentId: document.id,
-            event: "documents.update",
-          });
-        } catch (err) {
-          Logger.error("Failed to fetch subscriptions", err);
-        }
-      }
-    }
-    void fetchSubscription();
-  }, [document?.id, document?.isDeleted, subscriptions, revisionId]);
-
-  React.useEffect(() => {
     async function fetchViews() {
       if (document?.id && !document?.isDeleted && !revisionId) {
         try {
@@ -158,12 +141,17 @@ function DataLoader({ match, children }: Props) {
         throw new Error("Document not loaded yet");
       }
 
-      const newDocument = await documents.create({
-        collectionId: nested ? undefined : document.collectionId,
-        parentDocumentId: nested ? document.id : document.parentDocumentId,
-        title,
-        data: ProsemirrorHelper.getEmptyDocument(),
-      });
+      const newDocument = await documents.create(
+        {
+          collectionId: nested ? undefined : document.collectionId,
+          parentDocumentId: nested ? document.id : document.parentDocumentId,
+          title,
+          data: ProsemirrorHelper.getEmptyDocument(),
+        },
+        {
+          publish: document.isDraft ? undefined : true,
+        }
+      );
 
       return newDocument.url;
     },
@@ -177,7 +165,7 @@ function DataLoader({ match, children }: Props) {
 
       // If we're attempting to update an archived, deleted, or otherwise
       // uneditable document then forward to the canonical read url.
-      if (!can.update && isEditRoute) {
+      if (!can.update && isEditRoute && !document.template) {
         history.push(document.url);
         return;
       }
@@ -189,6 +177,7 @@ function DataLoader({ match, children }: Props) {
           void comments.fetchAll({
             documentId: document.id,
             limit: 100,
+            direction: "ASC",
           });
         }
 
@@ -211,6 +200,10 @@ function DataLoader({ match, children }: Props) {
     );
   }
 
+  if (can.read === false) {
+    return <Error404 />;
+  }
+
   if (!document || (revisionId && !revision)) {
     return (
       <>
@@ -219,14 +212,16 @@ function DataLoader({ match, children }: Props) {
     );
   }
 
+  const readOnly =
+    !isEditing || !can.update || document.isArchived || !!revisionId;
+
   return (
-    <React.Fragment>
+    <React.Fragment key={readOnly ? "readOnly" : ""}>
       {children({
         document,
         revision,
         abilities: can,
-        readOnly:
-          !isEditing || !can.update || document.isArchived || !!revisionId,
+        readOnly,
         onCreateLink,
         sharedTree,
       })}

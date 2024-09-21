@@ -60,7 +60,10 @@ export type Props<T extends MenuItem = MenuItem> = {
   uploadFile?: (file: File) => Promise<string>;
   onFileUploadStart?: () => void;
   onFileUploadStop?: () => void;
+  /** Callback when the menu is closed */
   onClose: (insertNewLine?: boolean) => void;
+  /** Optional callback when a suggestion is selected */
+  onSelect?: (item: MenuItem) => void;
   embeds?: EmbedDescriptor[];
   renderMenuItem: (
     item: T,
@@ -244,6 +247,8 @@ function SuggestionsMenu<T extends MenuItem>(props: Props<T>) {
 
   const handleClickItem = React.useCallback(
     (item) => {
+      props.onSelect?.(item);
+
       switch (item.name) {
         case "image":
           return triggerFilePick(
@@ -433,6 +438,7 @@ function SuggestionsMenu<T extends MenuItem>(props: Props<T>) {
       }
 
       return (
+        (item.name || "").toLocaleLowerCase().includes(searchInput) ||
         (item.title || "").toLocaleLowerCase().includes(searchInput) ||
         (item.keywords || "").toLocaleLowerCase().includes(searchInput)
       );
@@ -529,6 +535,7 @@ function SuggestionsMenu<T extends MenuItem>(props: Props<T>) {
       }
 
       if (event.key === "Escape") {
+        event.preventDefault();
         close();
       }
     };
@@ -559,7 +566,9 @@ function SuggestionsMenu<T extends MenuItem>(props: Props<T>) {
                 <LinkInput
                   type="text"
                   placeholder={
-                    insertItem.title
+                    "placeholder" in insertItem
+                      ? insertItem.placeholder
+                      : insertItem.title
                       ? dictionary.pasteLinkWithTitle(insertItem.title)
                       : dictionary.pasteLink
                   }

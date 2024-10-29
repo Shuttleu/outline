@@ -8,6 +8,7 @@ import { Avatar } from "~/components/Avatar";
 import Flex from "~/components/Flex";
 import useCurrentUser from "~/hooks/useCurrentUser";
 import useMenuContext from "~/hooks/useMenuContext";
+import useMobile from "~/hooks/useMobile";
 import usePrevious from "~/hooks/usePrevious";
 import useStores from "~/hooks/useStores";
 import AccountMenu from "~/menus/AccountMenu";
@@ -39,6 +40,7 @@ const Sidebar = React.forwardRef<HTMLDivElement, Props>(function _Sidebar(
   const previousLocation = usePrevious(location);
   const { isMenuOpen } = useMenuContext();
   const user = useCurrentUser({ rejectOnEmpty: false });
+  const isMobile = useMobile();
   const width = ui.sidebarWidth;
   const collapsed = ui.sidebarIsClosed && !isMenuOpen;
   const maxWidth = theme.sidebarMaxWidth;
@@ -189,6 +191,7 @@ const Sidebar = React.forwardRef<HTMLDivElement, Props>(function _Sidebar(
         $isSmallerThanMinimum={isSmallerThanMinimum}
         $mobileSidebarVisible={ui.mobileSidebarVisible}
         $collapsed={collapsed}
+        $isMobile={isMobile}
         className={className}
         onPointerMove={handlePointerMove}
         onPointerLeave={handlePointerLeave}
@@ -214,15 +217,7 @@ const Sidebar = React.forwardRef<HTMLDivElement, Props>(function _Sidebar(
                   />
                 }
               >
-                <NotificationsPopover>
-                  {(rest: SidebarButtonProps) => (
-                    <SidebarButton
-                      {...rest}
-                      position="bottom"
-                      image={<NotificationIcon />}
-                    />
-                  )}
-                </NotificationsPopover>
+                <Notifications />
               </SidebarButton>
             )}
           </AccountMenu>
@@ -236,6 +231,14 @@ const Sidebar = React.forwardRef<HTMLDivElement, Props>(function _Sidebar(
     </>
   );
 });
+
+const Notifications = () => (
+  <NotificationsPopover>
+    {(rest: SidebarButtonProps) => (
+      <SidebarButton {...rest} position="bottom" image={<NotificationIcon />} />
+    )}
+  </NotificationsPopover>
+);
 
 const Backdrop = styled.a`
   animation: ${fadeIn} 250ms ease-in-out;
@@ -256,6 +259,7 @@ type ContainerProps = {
   $isHovering: boolean;
   $collapsed: boolean;
   $hidden: boolean;
+  $isMobile: boolean;
 };
 
 const hoverStyles = (props: ContainerProps) => `
@@ -298,8 +302,19 @@ const Container = styled(Flex)<ContainerProps>`
 
   & > div {
     transition: opacity 150ms ease-in-out;
-    opacity: ${(props) =>
-      props.$hidden || (props.$collapsed && !props.$isHovering) ? "0" : "1"};
+    opacity: ${(props) => {
+      if (props.$hidden) {
+        return "0";
+      }
+      if (props.$isHovering) {
+        return "1";
+      }
+      if (props.$isMobile) {
+        return props.$mobileSidebarVisible ? "1" : "0";
+      } else {
+        return props.$collapsed ? "0" : "1";
+      }
+    }};
   }
 
   ${breakpoint("tablet")`

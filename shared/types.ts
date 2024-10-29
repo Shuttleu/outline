@@ -13,6 +13,10 @@ export enum StatusFilter {
   Draft = "draft",
 }
 
+export enum CollectionStatusFilter {
+  Archived = "archived",
+}
+
 export enum CommentStatusFilter {
   Resolved = "resolved",
   Unresolved = "unresolved",
@@ -164,6 +168,8 @@ export enum UserPreference {
   SeamlessEdit = "seamlessEdit",
   /** Whether documents should start in full-width mode. */
   FullWidthDocuments = "fullWidthDocuments",
+  /** Whether to sort the comments by their order in the document. */
+  SortCommentsByOrderInDocument = "sortCommentsByOrderInDocument",
 }
 
 export type UserPreferences = { [key in UserPreference]?: boolean };
@@ -288,20 +294,22 @@ export type NotificationSettings = {
     | boolean;
 };
 
-export const NotificationEventDefaults = {
-  [NotificationEventType.PublishDocument]: false,
-  [NotificationEventType.UpdateDocument]: true,
-  [NotificationEventType.CreateCollection]: false,
-  [NotificationEventType.CreateComment]: true,
-  [NotificationEventType.MentionedInDocument]: true,
-  [NotificationEventType.MentionedInComment]: true,
-  [NotificationEventType.InviteAccepted]: true,
-  [NotificationEventType.Onboarding]: true,
-  [NotificationEventType.Features]: true,
-  [NotificationEventType.ExportCompleted]: true,
-  [NotificationEventType.AddUserToDocument]: true,
-  [NotificationEventType.AddUserToCollection]: true,
-};
+export const NotificationEventDefaults: Record<NotificationEventType, boolean> =
+  {
+    [NotificationEventType.PublishDocument]: false,
+    [NotificationEventType.UpdateDocument]: true,
+    [NotificationEventType.CreateCollection]: false,
+    [NotificationEventType.CreateComment]: true,
+    [NotificationEventType.CreateRevision]: false,
+    [NotificationEventType.MentionedInDocument]: true,
+    [NotificationEventType.MentionedInComment]: true,
+    [NotificationEventType.InviteAccepted]: true,
+    [NotificationEventType.Onboarding]: true,
+    [NotificationEventType.Features]: true,
+    [NotificationEventType.ExportCompleted]: true,
+    [NotificationEventType.AddUserToDocument]: true,
+    [NotificationEventType.AddUserToCollection]: true,
+  };
 
 export enum UnfurlResourceType {
   OEmbed = "oembed",
@@ -329,6 +337,8 @@ export type UnfurlResponse = {
     type: UnfurlResourceType.Mention;
     /** Mentioned user's name */
     name: string;
+    /** Mentioned user's email */
+    email: string | null;
     /** Mentioned user's avatar URL */
     avatarUrl: string | null;
     /** Used to create mentioned user's avatar if no avatar URL provided */

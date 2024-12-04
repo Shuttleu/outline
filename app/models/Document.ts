@@ -65,10 +65,6 @@ export default class Document extends ArchivableModel {
 
   store: DocumentsStore;
 
-  @Field
-  @observable
-  id: string;
-
   @observable.shallow
   data: ProsemirrorData;
 
@@ -254,7 +250,8 @@ export default class Document extends ArchivableModel {
 
   @computed
   get path(): string {
-    const prefix = this.template ? settingsPath("templates") : "/doc";
+    const prefix =
+      this.template && !this.isDeleted ? settingsPath("templates") : "/doc";
 
     if (!this.title) {
       return `${prefix}/untitled-${this.urlId}`;
@@ -576,6 +573,8 @@ export default class Document extends ArchivableModel {
     title?: string;
     publish?: boolean;
     recursive?: boolean;
+    collectionId?: string | null;
+    parentDocumentId?: string;
   }) => this.store.duplicate(this, options);
 
   /**

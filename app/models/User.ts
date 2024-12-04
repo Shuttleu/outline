@@ -24,10 +24,6 @@ class User extends ParanoidModel {
 
   @Field
   @observable
-  id: string;
-
-  @Field
-  @observable
   avatarUrl: string;
 
   @Field
@@ -49,6 +45,10 @@ class User extends ParanoidModel {
   @Field
   @observable
   notificationSettings: NotificationSettings;
+
+  @Field
+  @observable
+  timezone?: string;
 
   @observable
   email: string;

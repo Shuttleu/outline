@@ -7,6 +7,7 @@ import { isCode } from "@shared/editor/lib/isCode";
 import { findParentNode } from "@shared/editor/queries/findParentNode";
 import { EditorStyleHelper } from "@shared/editor/styles/EditorStyleHelper";
 import { depths, s } from "@shared/styles";
+import { HEADER_HEIGHT } from "~/components/Header";
 import { Portal } from "~/components/Portal";
 import useComponentSize from "~/hooks/useComponentSize";
 import useEventListener from "~/hooks/useEventListener";
@@ -130,13 +131,15 @@ function usePosition({
 
   // Images need their own positioning to get the toolbar in the center
   if (isImageSelection) {
-    const element = view.nodeDOM(selection.from) as HTMLElement;
+    const element = view.nodeDOM(selection.from);
 
     // Images are wrapped which impacts positioning - need to get the element
     // specifically tagged as the handle
-    const imageElement = element.getElementsByClassName(
-      EditorStyleHelper.imageHandle
-    )[0];
+    const imageElement = element
+      ? (element as HTMLElement).getElementsByClassName(
+          EditorStyleHelper.imageHandle
+        )[0]
+      : undefined;
     if (imageElement) {
       const { left, top, width } = imageElement.getBoundingClientRect();
 
@@ -168,9 +171,12 @@ function usePosition({
       centerOfSelection - menuWidth / 2
     )
   );
-  const top = Math.min(
-    window.innerHeight - menuHeight - margin,
-    Math.max(margin, selectionBounds.top - menuHeight)
+  const top = Math.max(
+    HEADER_HEIGHT,
+    Math.min(
+      window.innerHeight - menuHeight - margin,
+      Math.max(margin, selectionBounds.top - menuHeight)
+    )
   );
 
   // if the menu has been offset to not extend offscreen then we should adjust

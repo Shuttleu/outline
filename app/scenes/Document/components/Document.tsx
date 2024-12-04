@@ -26,6 +26,7 @@ import {
   TeamPreference,
 } from "@shared/types";
 import { ProsemirrorHelper } from "@shared/utils/ProsemirrorHelper";
+import { TextHelper } from "@shared/utils/TextHelper";
 import { parseDomain } from "@shared/utils/domains";
 import { determineIconType } from "@shared/utils/icon";
 import RootStore from "~/stores/RootStore";
@@ -44,7 +45,6 @@ import withStores from "~/components/withStores";
 import type { Editor as TEditor } from "~/editor";
 import { SearchResult } from "~/editor/components/LinkEditor";
 import { client } from "~/utils/ApiClient";
-import { replaceTitleVariables } from "~/utils/date";
 import { emojiToUrl } from "~/utils/emoji";
 import { isModKey } from "~/utils/keyboard";
 
@@ -151,7 +151,13 @@ class DocumentScene extends React.Component<Props> {
     }
 
     const { view, schema } = editorRef;
-    const doc = Node.fromJSON(schema, template.data);
+    const doc = Node.fromJSON(
+      schema,
+      ProsemirrorHelper.replaceTemplateVariables(
+        template.data,
+        this.props.auth.user!
+      )
+    );
 
     if (doc) {
       view.dispatch(
@@ -168,9 +174,9 @@ class DocumentScene extends React.Component<Props> {
     }
 
     if (!this.title) {
-      const title = replaceTitleVariables(
+      const title = TextHelper.replaceTemplateVariables(
         template.title,
-        this.props.auth.user || undefined
+        this.props.auth.user!
       );
       this.title = title;
       this.props.document.title = title;
@@ -215,13 +221,15 @@ class DocumentScene extends React.Component<Props> {
 
   onUndoRedo = (event: KeyboardEvent) => {
     if (isModKey(event)) {
+      event.preventDefault();
+
       if (event.shiftKey) {
-        if (this.editor.current?.redo()) {
-          event.preventDefault();
+        if (!this.props.readOnly) {
+          this.editor.current?.commands.redo();
         }
       } else {
-        if (this.editor.current?.undo()) {
-          event.preventDefault();
+        if (!this.props.readOnly) {
+          this.editor.current?.commands.undo();
         }
       }
     }
@@ -410,7 +418,8 @@ class DocumentScene extends React.Component<Props> {
       (team && team.documentEmbeds === false) || document.embedsDisabled;
 
     const showContents =
-      ui.tocVisible === true || (isShare && ui.tocVisible !== false);
+      (ui.tocVisible === true && !document.isTemplate) ||
+      (isShare && ui.tocVisible !== false);
     const tocPos =
       tocPosition ??
       ((team?.getPreference(TeamPreference.TocPosition) as TOCPosition) ||
@@ -695,7 +704,6 @@ const Footer = styled.div`
 const Background = styled(Container)`
   position: relative;
   background: ${s("background")};
-  transition: ${s("backgroundTransition")};
 `;
 
 const ReferencesWrapper = styled.div`

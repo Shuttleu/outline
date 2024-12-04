@@ -12,6 +12,7 @@ export type Props = {
   editorStyle?: React.CSSProperties;
   grow?: boolean;
   theme: DefaultTheme;
+  userId?: string;
 };
 
 export const fadeIn = keyframes`
@@ -51,6 +52,8 @@ const mathStyle = (props: Props) => css`
     font-size: 0.95em;
     font-family: ${props.theme.fontFamilyMono};
     cursor: auto;
+    white-space: pre-wrap;
+    overflow-x: auto;
   }
 
   .math-node.empty-math .math-render::before {
@@ -700,7 +703,10 @@ img.ProseMirror-separator {
 }
 
 .heading-name:first-child,
-.heading-name:first-child + .ProseMirror-yjs-cursor {
+// Edge case where multiplayer cursor is between start of cell and heading
+.heading-name:first-child + .ProseMirror-yjs-cursor,
+// Edge case where table grips are between start of cell and heading
+.heading-name:first-child + [role=button] + [role=button] {
   & + h1,
   & + h2,
   & + h3,
@@ -855,7 +861,7 @@ h6 {
 
   &.collapsed {
     svg {
-      transform: rotate("-90deg");
+      transform: rotate(-90deg);
       pointer-events: none;
     }
     transition-delay: 0.1s;
@@ -885,7 +891,9 @@ h6 {
 }
 
 .${EditorStyleHelper.comment} {
-  &:not([data-resolved]) {
+  &:not([data-resolved]):not([data-draft]), &[data-draft][data-user-id="${
+    props.userId ?? ""
+  }"]  {
     border-bottom: 2px solid ${props.theme.commentMarkBackground};
     transition: background 100ms ease-in-out;
     border-radius: 2px;
@@ -1062,11 +1070,11 @@ a:hover {
 
 ul,
 ol {
-  margin: 0 0.1em 0 -26px;
+  margin: 0 0.1em 0 ${props.staticHTML ? "0" : "-26px"};
   padding: 0 0 0 48px;
 
   &:dir(rtl) {
-    margin: 0 -26px 0 0.1em;
+    margin: 0 ${props.staticHTML ? "0" : "-26px"} 0 0.1em;
     padding: 0 48px 0 0;
   }
 }
@@ -1297,20 +1305,19 @@ mark {
 
   // Hide code without display none so toolbar can still be positioned against it
   &:not(.code-active) {
-    height: ${props.staticHTML ? "auto" : "0"};
+    height: ${props.staticHTML || props.readOnly ? "auto" : "0"};
     margin: -0.75em 0;
     overflow: hidden;
 
     // Allows the margin to collapse correctly by moving div out of the flow
-    position: ${props.staticHTML ? "relative" : "absolute"};
+    position: ${props.staticHTML || props.readOnly ? "relative" : "absolute"};
   }
 }
 
-/* Hide code without display none so toolbar can still be positioned against it */
 .ProseMirror[contenteditable="false"] .code-block[data-language=mermaidjs] {
-  height: ${props.staticHTML ? "auto" : "0"};
-  margin: -0.5em 0;
-  overflow: hidden;
+    height: 0;
+    overflow: hidden;
+    margin: -0.5em 0 0 0;
 }
 
 .code-block.with-line-numbers {
@@ -1770,7 +1777,7 @@ table {
   &:focus {
     cursor: var(--pointer);
     color: ${props.theme.text};
-    background: ${props.theme.secondaryBackground};
+    background: ${props.theme.backgroundSecondary};
   }
 }
 

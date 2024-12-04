@@ -4,7 +4,6 @@ import { darken, transparentize } from "polished";
 import { baseKeymap } from "prosemirror-commands";
 import { dropCursor } from "prosemirror-dropcursor";
 import { gapCursor } from "prosemirror-gapcursor";
-import { redo, undo } from "prosemirror-history";
 import { inputRules, InputRule } from "prosemirror-inputrules";
 import { keymap } from "prosemirror-keymap";
 import { MarkdownParser } from "prosemirror-markdown";
@@ -609,20 +608,6 @@ export class Editor extends React.PureComponent<
     );
 
   /**
-   * Undo the last change in the editor.
-   *
-   * @returns True if the undo was successful
-   */
-  public undo = () => undo(this.view.state, this.view.dispatch, this.view);
-
-  /**
-   * Redo the last change in the editor.
-   *
-   * @returns True if the change was successful
-   */
-  public redo = () => redo(this.view.state, this.view.dispatch, this.view);
-
-  /**
    * Returns true if the trimmed content of the editor is an empty string.
    *
    * @returns True if the editor is empty
@@ -690,7 +675,10 @@ export class Editor extends React.PureComponent<
    * @param commentId The id of the comment to remove
    * @param attrs The attributes to update
    */
-  public updateComment = (commentId: string, attrs: { resolved: boolean }) => {
+  public updateComment = (
+    commentId: string,
+    attrs: { resolved?: boolean; draft?: boolean }
+  ) => {
     const { state, dispatch } = this.view;
     const tr = state.tr;
 

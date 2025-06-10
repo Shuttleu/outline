@@ -1,6 +1,6 @@
-ARG APP_PATH=/opt/outline
-ARG BASE_IMAGE=outlinewiki/outline-base
-FROM ${BASE_IMAGE} AS base
+# syntax = edrevo/dockerfile-plus
+
+INCLUDE+ Dockerfile.base
 
 ARG APP_PATH
 WORKDIR $APP_PATH
@@ -14,12 +14,12 @@ ARG APP_PATH
 WORKDIR $APP_PATH
 ENV NODE_ENV=production
 
-COPY --from=base $APP_PATH/build ./build
-COPY --from=base $APP_PATH/server ./server
-COPY --from=base $APP_PATH/public ./public
-COPY --from=base $APP_PATH/.sequelizerc ./.sequelizerc
-COPY --from=base $APP_PATH/node_modules ./node_modules
-COPY --from=base $APP_PATH/package.json ./package.json
+COPY --from=deps $APP_PATH/build ./build
+COPY --from=deps $APP_PATH/server ./server
+COPY --from=deps $APP_PATH/public ./public
+COPY --from=deps $APP_PATH/.sequelizerc ./.sequelizerc
+COPY --from=deps $APP_PATH/node_modules ./node_modules
+COPY --from=deps $APP_PATH/package.json ./package.json
 
 # Install wget to healthcheck the server
 RUN  apt-get update \
